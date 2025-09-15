@@ -1,46 +1,42 @@
-import re
+import streamlit as st
+import boto3
 import json
+import uuid
+import os
+import re
 
 # -----------------------------
-# Glosario optimizado
+# Glosario y validación
 # -----------------------------
 GLOSARIO = {
     "wip": {"min": 10001, "max": 65535},
     "lineas_validas": set(["ZZCAMPREC", "ZZVENTA", "ZZCOMPRA"]),
     "cuentas_validas": set(["I741351", "E123456"]),
-    "pdv_validos": set(["Pa","Pb","W1"]),
+    "pdv_validos": set(["Pa","Pb","Z1"]),
     "incompatibilidades": [
         {"linea": "ZZCAMPREC", "cuentas_prohibidas_prefijo": "I"}
     ]
 }
 
-# -----------------------------
-# Función de validación bulletproof
-# -----------------------------
 def validar_mensaje(texto):
     errores = []
 
-    texto_lower = texto.lower()
-
-    # --- WIP ---
-    wips = []
+    # WIP
     for wip in re.findall(r"\b\d{5,8}\b", texto):
         try:
             n = int(wip)
             if not (GLOSARIO["wip"]["min"] <= n <= GLOSARIO["wip"]["max"]):
                 errores.append(f"WIP {n} fuera de rango (10001-65535)")
-            wips.append(n)
         except ValueError:
             errores.append(f"WIP {wip} no es un número válido")
 
-    # --- Cuentas ---
-    cuentas = []
-    for cuenta in re.findall(r"\b[IE]\d{6}\b", texto):
+    # Cuentas
+    cuentas = re.findall(r"\b[IE]\d{6}\b", texto)
+    for cuenta in cuentas:
         if cuenta not in GLOSARIO["cuentas_validas"]:
             errores.append(f"Cuenta {cuenta} no válida")
-        cuentas.append(cuenta)
 
-    # --- Líneas ---
+    # Líneas
     lineas = []
     for linea in re.findall(r"\bZZ[A-Z0-9]+\b", texto, re.IGNORECASE):
         linea_upper = linea.upper()
@@ -48,15 +44,14 @@ def validar_mensaje(texto):
             errores.append(f"Línea {linea} no reconocida")
         lineas.append(linea_upper)
 
-    # --- PdV ---
+    # PdV
     pdvs = []
-    # Detecta todos los PdV siguiendo "PdV" en el texto
     for pdv_match in re.findall(r"\b[Pp]d[Vv]\s+([A-Za-z0-9]+)\b", texto):
         if pdv_match not in GLOSARIO["pdv_validos"]:
             errores.append(f"Punto de venta {pdv_match} no válido")
         pdvs.append(pdv_match)
 
-    # --- Compatibilidades ---
+    # Compatibilidades
     for regla in GLOSARIO["incompatibilidades"]:
         if regla["linea"] in lineas:
             for c in cuentas:
@@ -66,30 +61,64 @@ def validar_mensaje(texto):
     return errores
 
 # -----------------------------
-# Función principal
+# Configuración Bedrock
 # -----------------------------
-def procesar_mensaje(texto):
-    errores = validar_mensaje(texto)
-    if errores:
-        return {"status": "error", "errores": errores}
-    else:
-        return {"status": "ok", "mensaje": texto}
+REGION = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
+AGENT_ARN = "arn:aws:bedrock:us-east-1:699541216231:agent/UT8RWCB5UB"
+AGENT_ALIAS_ARN = "arn:aws:bedrock:us-east-1:699541216231:agent-alias/LK9JA0YTKV"
 
-# -----------------------------
-# Lambda handler
-# -----------------------------
-def lambda_handler(event, context):
-    texto = event.get("input", "")
-    return procesar_mensaje(texto)
+bedrock_agent_client = boto3.client("bedrock-agent-runtime", region_name=REGION)
 
-# -----------------------------
-# Prueba rápida
-# -----------------------------
-if __name__ == "__main__":
-    mensaje_usuario = (
-        "Quiero facturar la línea ZZCAMPREC contra la cuenta E123456 "
-        "de la WIP 12589 en PdV Pa y también la línea ZZVENTA "
-        "contra en PdV W1"
+def call_bedrock_agent(prompt, session_id):
+    response_stream = bedrock_agent_client.invoke_agent(
+        agentId=AGENT_ARN.split("/")[-1],
+        agentAliasId=AGENT_ALIAS_ARN.split("/")[-1],
+        sessionId=session_id,
+        inputText=prompt
     )
-    resultado = procesar_mensaje(mensaje_usuario)
-    print(json.dumps(resultado, indent=2))
+    
+    final_response = ""
+    for event in response_stream['completion']:
+        if 'chunk' in event:
+            data = event['chunk']['bytes']
+            text_piece = data.decode('utf-8')
+            final_response += text_piece
+    return final_response
+
+# -----------------------------
+# Interfaz Streamlit
+# -----------------------------
+st.title("🤖 Chatbot soporte Autoline con IA")
+
+if "messages" not in st.session_state:
+    st.session_state["messages"] = []
+if "session_id" not in st.session_state:
+    st.session_state["session_id"] = str(uuid.uuid4())
+
+for message in st.session_state["messages"]:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+if user_input := st.chat_input("Escribe tu consulta..."):
+    # --- Validación antes de llamar al agente ---
+    errores = validar_mensaje(user_input)
+    if errores:
+        st.error("Se encontraron errores en tu mensaje:")
+        for e in errores:
+            st.warning(f"- {e}")
+        # También lo agregamos a la conversación como asistente
+        st.session_state["messages"].append({"role": "assistant", "content": "Se detectaron errores en los datos: " + ", ".join(errores)})
+    else:
+        # Todo correcto → llamar al agente
+        st.session_state["messages"].append({"role": "user", "content": user_input})
+        with st.chat_message("user"):
+            st.markdown(user_input)
+
+        with st.chat_message("assistant"):
+            with st.spinner("Pensando..."):
+                try:
+                    response = call_bedrock_agent(user_input, st.session_state["session_id"])
+                    st.markdown(response)
+                    st.session_state["messages"].append({"role": "assistant", "content": response})
+                except Exception as e:
+                    st.error(f"Error: {str(e)}")
