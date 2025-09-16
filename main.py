@@ -50,13 +50,13 @@ def validar_mensaje(texto):
     errores = []
 
     # WIP
-    for wip in re.findall(r"\b\d{5,8}\b", texto):
+    for match in re.findall(r"\bWIP\s+(\d+)\b", texto, re.IGNORECASE):
         try:
-            n = int(wip)
+            n = int(match)
             if not (GLOSARIO["wip"]["min"] <= n <= GLOSARIO["wip"]["max"]):
                 errores.append(f"WIP {n} fuera de rango (10001-65535)")
         except ValueError:
-            errores.append(f"WIP {wip} no es un número válido")
+            errores.append(f"WIP {match} no es un número válido")
 
     # Cuentas
     cuentas = re.findall(r"\b[IE]\d{6}\b", texto)
@@ -153,3 +153,4 @@ if user_input := st.chat_input("Escribe tu consulta..."):
                     st.session_state["messages"].append({"role": "assistant", "content": response})
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
+
