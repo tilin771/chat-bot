@@ -145,10 +145,6 @@ if user_input := st.chat_input("Escribe tu consulta..."):
         st.session_state["messages"].append({"role": "assistant", "content": mensaje_errores})
     else:
         # Todo correcto → llamar al agente
-        st.session_state["messages"].append({"role": "user", "content": user_input})
-        with st.chat_message("user"):
-            st.markdown(user_input)
-
         with st.chat_message("assistant"):
             with st.spinner("Pensando..."):
                 try:
@@ -157,5 +153,6 @@ if user_input := st.chat_input("Escribe tu consulta..."):
                     st.session_state["messages"].append({"role": "assistant", "content": response})
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
+
 
 
