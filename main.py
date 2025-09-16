@@ -130,14 +130,18 @@ for message in st.session_state["messages"]:
         st.markdown(message["content"])
 
 if user_input := st.chat_input("Escribe tu consulta..."):
+    # --- Mostrar mensaje del usuario siempre ---
+    st.session_state["messages"].append({"role": "user", "content": user_input})
+    with st.chat_message("user"):
+        st.markdown(user_input)
+
     # --- Validación antes de llamar al agente ---
     errores = validar_mensaje(user_input)
     if errores:
         # Concatenar todos los errores en un solo mensaje
-        mensaje_errores = "Se encontraron los siguientes errores en tu mensaje:\n" + "\n".join(f"- {e}" for e in errores)
-        # Mostrar como mensaje de la IA
-        st.chat_message("assistant").markdown(mensaje_errores)
-        # Agregar a la conversación
+        mensaje_errores = ("⚠️ Se encontraron los siguientes errores en tu mensaje:\n\n" +"\n".join(f"- {e}" for e in errores))
+        with st.chat_message("assistant"):
+            st.markdown(mensaje_errores)
         st.session_state["messages"].append({"role": "assistant", "content": mensaje_errores})
     else:
         # Todo correcto → llamar al agente
@@ -153,4 +157,5 @@ if user_input := st.chat_input("Escribe tu consulta..."):
                     st.session_state["messages"].append({"role": "assistant", "content": response})
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
+
 
