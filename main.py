@@ -108,7 +108,7 @@ def call_bedrock_agent_streaming(prompt, session_id):
         agentAliasId=AGENT_ALIAS_ARN.split("/")[-1],
         sessionId=session_id,
         inputText=prompt,
-        enableTrace=True,
+        enableTrace= False,
         streamingConfigurations={
             "applyGuardrailInterval": 20,
             "streamFinalResponse": True
@@ -121,13 +121,6 @@ def call_bedrock_agent_streaming(prompt, session_id):
             text_piece = event['chunk']['bytes'].decode('utf-8')
             final_response += text_piece
             yield final_response
-
-        # Opcional: procesar trazas
-        if 'trace' in event:
-            trace_event = event['trace']
-            # Aquí podrías loguear o procesar trazas si quieres
-            # print(trace_event)
-
 # -----------------------------
 # Interfaz Streamlit
 # -----------------------------
@@ -163,9 +156,12 @@ if user_input := st.chat_input("Escribe tu consulta..."):
             with st.spinner("Pensando..."):
                 try:
                     for partial_response in call_bedrock_agent_streaming(user_input, st.session_state["session_id"]):
-                        response_placeholder.markdown(partial_response)
+                        clean_response = re.sub(r"</?text>", "", partial_response)
+                        response_placeholder.markdown(clean_response)
+
                     # Guardar la respuesta final en el historial
                     st.session_state["messages"].append({"role": "assistant", "content": partial_response})
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
+
 
