@@ -5,7 +5,6 @@ import uuid
 import os
 import re
 
-
 # -----------------------------
 # Glosario y validación
 # -----------------------------
@@ -13,34 +12,34 @@ GLOSARIO = {
     "wip": {"min": 10001, "max": 65535},
     "lineas_validas": set(["ZZCAMPREC", "ZZVENTA", "ZZCOMPRA"]),
     "cuentas_validas": set(["I741351", "E123456"]),
-    "pdv_validos" : set([
-    "17","45","70","71","76","90","91","98","99",
-    "A1","A2","A3","A4","A5",
-    "Bg","Bm",
-    "Ce","Cm","Cs",
-    "D5",
-    "Eh","Em","Eu",
-    "Fc","Ff","Fg","Fm","Ft",
-    "Gb","Gc","Gf","Gm","Gv",
-    "H3","H5","H6","H7","Hb","Hl","Hm","Hn","Hz",
-    "Ie",
-    "Jb","Je","Jg","Jm","Jp","Jr","Js","Ju",
-    "Ka","Kb","Kc","Kh","Km","Ko","Kr","Kt","Ku",
-    "Lb","Lc","Lm","Lu",
-    "Mc","Mi",
-    "Nb","Nh","Np",
-    "Oc","Od","Og","Oj","Ok","Op","Oq","Or","Os",
-    "Pa","Pb","Pf","Pg","Ph","Pm","Po","Pp","Pq","Pr","Pv",
-    "Qh","Qm","Qp","Qx",
-    "Ra","Rb","Rc","Rd","Re","Rf","Rg","Ri","Rk","Rl","Rm","Rn","Rp","Rr","Rs","Rt","Ru","Rv","Rx",
-    "Sl","Sx",
-    "Ti","Tj","To","Tr","Tt",
-    "Ub","Um","Uv",
-    "V1","V2","Vb","Vc","Vg","Vh","Vm","Vp","Vs","Vt","Vv",
-    "Xc","Xe","Xm",
-    "Yc",
-    "Zv","Zx"
-]),
+    "pdv_validos": set([
+        "17","45","70","71","76","90","91","98","99",
+        "A1","A2","A3","A4","A5",
+        "Bg","Bm",
+        "Ce","Cm","Cs",
+        "D5",
+        "Eh","Em","Eu",
+        "Fc","Ff","Fg","Fm","Ft",
+        "Gb","Gc","Gf","Gm","Gv",
+        "H3","H5","H6","H7","Hb","Hl","Hm","Hn","Hz",
+        "Ie",
+        "Jb","Je","Jg","Jm","Jp","Jr","Js","Ju",
+        "Ka","Kb","Kc","Kh","Km","Ko","Kr","Kt","Ku",
+        "Lb","Lc","Lm","Lu",
+        "Mc","Mi",
+        "Nb","Nh","Np",
+        "Oc","Od","Og","Oj","Ok","Op","Oq","Or","Os",
+        "Pa","Pb","Pf","Pg","Ph","Pm","Po","Pp","Pq","Pr","Pv",
+        "Qh","Qm","Qp","Qx",
+        "Ra","Rb","Rc","Rd","Re","Rf","Rg","Ri","Rk","Rl","Rm","Rn","Rp","Rr","Rs","Rt","Ru","Rv","Rx",
+        "Sl","Sx",
+        "Ti","Tj","To","Tr","Tt",
+        "Ub","Um","Uv",
+        "V1","V2","Vb","Vc","Vg","Vh","Vm","Vp","Vs","Vt","Vv",
+        "Xc","Xe","Xm",
+        "Yc",
+        "Zv","Zx"
+    ]),
     "incompatibilidades": [
         {"linea": "ZZCAMPREC", "cuentas_prohibidas_prefijo": "I"}
     ]
@@ -75,11 +74,9 @@ def validar_mensaje(texto):
     # PdV
     pdvs = []
     for pdv_match in re.findall(r"\b(?:pdv|punto de venta)\s+([A-Za-z0-9]+)\b", texto, re.IGNORECASE):
-        print (f"PUNTO DE VENTA ENCONTRADO {pdv_match}")
         if pdv_match not in GLOSARIO["pdv_validos"]:
             errores.append(f"Punto de venta {pdv_match} no válido")
         pdvs.append(pdv_match)
-        print(pdvs)
 
     # Compatibilidades
     for regla in GLOSARIO["incompatibilidades"]:
@@ -99,21 +96,37 @@ AGENT_ALIAS_ARN = "arn:aws:bedrock:us-east-1:699541216231:agent-alias/LK9JA0YTKV
 
 bedrock_agent_client = boto3.client("bedrock-agent-runtime", region_name=REGION)
 
-def call_bedrock_agent(prompt, session_id):
+# -----------------------------
+# Llamada al agente con streaming
+# -----------------------------
+def call_bedrock_agent_streaming(prompt, session_id):
+    """
+    Llama al agente de Bedrock usando streaming y retorna la respuesta mientras se genera.
+    """
     response_stream = bedrock_agent_client.invoke_agent(
         agentId=AGENT_ARN.split("/")[-1],
         agentAliasId=AGENT_ALIAS_ARN.split("/")[-1],
         sessionId=session_id,
-        inputText=prompt
+        inputText=prompt,
+        enableTrace=True,
+        streamingConfigurations={
+            "applyGuardrailInterval": 20,
+            "streamFinalResponse": False
+        }
     )
-    
+
     final_response = ""
-    for event in response_stream['completion']:
+    for event in response_stream.get('completion', []):
         if 'chunk' in event:
-            data = event['chunk']['bytes']
-            text_piece = data.decode('utf-8')
+            text_piece = event['chunk']['bytes'].decode('utf-8')
             final_response += text_piece
-    return final_response
+            yield final_response
+
+        # Opcional: procesar trazas
+        if 'trace' in event:
+            trace_event = event['trace']
+            # Aquí podrías loguear o procesar trazas si quieres
+            # print(trace_event)
 
 # -----------------------------
 # Interfaz Streamlit
@@ -130,29 +143,28 @@ for message in st.session_state["messages"]:
         st.markdown(message["content"])
 
 if user_input := st.chat_input("Escribe tu consulta..."):
-    # --- Mostrar mensaje del usuario siempre ---
+    # Mostrar mensaje del usuario
     st.session_state["messages"].append({"role": "user", "content": user_input})
     with st.chat_message("user"):
         st.markdown(user_input)
 
-    # --- Validación antes de llamar al agente ---
+    # Validación antes de llamar al agente
     errores = validar_mensaje(user_input)
     if errores:
-        # Concatenar todos los errores en un solo mensaje
-        mensaje_errores = ("⚠️ Se encontraron los siguientes errores en tu mensaje:\n\n" +"\n".join(f"- {e}" for e in errores))
+        mensaje_errores = ("⚠️ Se encontraron los siguientes errores en tu mensaje:\n\n" +
+                           "\n".join(f"- {e}" for e in errores))
         with st.chat_message("assistant"):
             st.markdown(mensaje_errores)
         st.session_state["messages"].append({"role": "assistant", "content": mensaje_errores})
     else:
-        # Todo correcto → llamar al agente
-        with st.chat_message("assistant"):
+        # Todo correcto → llamar al agente en streaming
+        with st.chat_message("assistant") as chat_msg:
+            response_placeholder = st.empty()
             with st.spinner("Pensando..."):
                 try:
-                    response = call_bedrock_agent(user_input, st.session_state["session_id"])
-                    st.markdown(response)
-                    st.session_state["messages"].append({"role": "assistant", "content": response})
+                    for partial_response in call_bedrock_agent_streaming(user_input, st.session_state["session_id"]):
+                        response_placeholder.markdown(partial_response)
+                    # Guardar la respuesta final en el historial
+                    st.session_state["messages"].append({"role": "assistant", "content": partial_response})
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
-
-
-
