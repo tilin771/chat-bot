@@ -111,7 +111,7 @@ def call_bedrock_agent_streaming(prompt, session_id):
         enableTrace=True,
         streamingConfigurations={
             "applyGuardrailInterval": 20,
-            "streamFinalResponse": False
+            "streamFinalResponse": True
         }
     )
 
@@ -168,3 +168,4 @@ if user_input := st.chat_input("Escribe tu consulta..."):
                     st.session_state["messages"].append({"role": "assistant", "content": partial_response})
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
+
