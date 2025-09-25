@@ -153,15 +153,19 @@ if user_input := st.chat_input("Escribe tu consulta..."):
         # Todo correcto → llamar al agente en streaming
         with st.chat_message("assistant") as chat_msg:
             response_placeholder = st.empty()
+            full_response = ""  # Aquí acumulamos todo lo que llega
             with st.spinner("Pensando..."):
                 try:
                     for partial_response in call_bedrock_agent_streaming(user_input, st.session_state["session_id"]):
+                        # Limpiar tags <text>
                         clean_response = re.sub(r"</?text>", "", partial_response)
+                        full_response = clean_response  # Siempre guardamos todo lo que se ha generado hasta ahora
                         response_placeholder.markdown(clean_response)
-
+                    
                     # Guardar la respuesta final en el historial
-                    st.session_state["messages"].append({"role": "assistant", "content": partial_response})
+                    st.session_state["messages"].append({"role": "assistant", "content": full_response})
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
+
 
 
