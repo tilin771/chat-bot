@@ -92,7 +92,7 @@ def validar_mensaje(texto):
 # -----------------------------
 REGION = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
 AGENT_ARN = "arn:aws:bedrock:us-east-1:699541216231:agent/UT8RWCB5UB"
-AGENT_ALIAS_ARN = "arn:aws:bedrock:us-east-1:699541216231:agent-alias/LK9JA0YTKV"
+AGENT_ALIAS_ARN = "arn:aws:bedrock:us-east-1:699541216231:agent-alias/QFSKS7G11P"
 
 bedrock_agent_client = boto3.client("bedrock-agent-runtime", region_name=REGION)
 
@@ -166,6 +166,7 @@ if user_input := st.chat_input("Escribe tu consulta..."):
                     st.session_state["messages"].append({"role": "assistant", "content": full_response})
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
+
 
 
 
